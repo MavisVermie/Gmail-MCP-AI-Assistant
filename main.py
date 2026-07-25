@@ -1,14 +1,126 @@
-from mcp_server.gmail_client import list_emails,reply_to_email
+"""Conversational CLI Gmail Assistant using Pydantic AI and MCP.
+
+Connects to mcp_server.server over stdio transport.
+Maintains multi-turn chat history and handles security approval
+for sensitive email actions (sending & replying) at the application level.
+"""
+
+import asyncio
 import json
+import os
 import sys
 
-# Ensure UTF-8 output formatting on Windows console
+from dotenv import load_dotenv
+load_dotenv()
+
+from pydantic_ai import Agent
+from pydantic_ai.mcp import MCPToolset, StdioTransport
+from pydantic_ai.messages import ModelMessage
+
+# Configure UTF-8 encoding for Windows console output
 sys.stdout.reconfigure(encoding="utf-8")
 
-from mcp_server.gmail_client import send_email
+SYSTEM_PROMPT = """You are an intelligent Gmail Assistant connected to Gmail tools via MCP (Model Context Protocol).
 
-# Test 1: Invalid email address (Validation Test)
-print("=== reply email ===")
-res1 = reply_to_email(message_id="19f99cf659c2d8e5",body="")
-print(json.dumps(res1, indent=2))
+Your primary responsibilities:
+1. Help the user manage their Gmail inbox (listing emails, reading specific emails, searching emails, sending new emails, and replying to existing threads).
+2. Format email lists and email details cleanly using clear, readable Markdown formatting.
+3. For non-email questions (such as general knowledge, coding questions, math, or conversation), answer directly without calling any email tools.
+4. Only invoke email tools when the user explicitly or implicitly asks for an email operation.
+5. If an email operation returns an error or failure message, explain it to the user clearly and politely.
+"""
 
+
+async def process_tool_approval(ctx, call_tool, tool_name: str, tool_args: dict):
+    """Application-level security interceptor for sensitive tool execution.
+
+    Requires explicit user confirmation before executing send_email or reply_to_email.
+    """
+    if tool_name in ("send_email", "reply_to_email"):
+        print("\n" + "=" * 65)
+        print(f"🔒 [SECURITY APPROVAL REQUIRED: {tool_name}]")
+        print("Parameters for review:")
+        for key, val in tool_args.items():
+            # Truncate long bodies for preview
+            display_val = str(val)[:300] + "..." if len(str(val)) > 300 else val
+            print(f"  • {key}: {display_val}")
+        print("=" * 65)
+
+        prompt_str = f"Do you approve executing '{tool_name}' with these parameters? (y/N): "
+        user_response = await asyncio.to_thread(input, prompt_str)
+        user_response = user_response.strip().lower()
+
+        if user_response not in ("y", "yes"):
+            print("❌ Action cancelled by user authorization policy.\n")
+            return {
+                "success": False,
+                "id": None,
+                "thread_id": None,
+                "message": f"Action '{tool_name}' was declined by the user at the application level.",
+            }
+
+        print("✅ User approved. Executing tool via MCP...\n")
+
+    return await call_tool(tool_name, tool_args)
+
+
+async def main() -> None:
+    """Main CLI chat loop."""
+    print("=========================================================")
+    print("  📧 Gmail Assistant CLI (Pydantic AI + FastMCP)")
+    print("  Connected over stdio to mcp_server.server")
+    print("  Type 'exit', 'quit', or 'q' to end the session.")
+    print("=========================================================\n")
+
+    # Launch MCP server subprocess via stdio
+    transport = StdioTransport(
+        command=sys.executable,
+        args=["-m", "mcp_server.server"],
+        cwd=".",
+    )
+
+    toolset = MCPToolset(
+        transport,
+        process_tool_call=process_tool_approval,
+    )
+
+    agent = Agent(
+        "openai:gpt-4o",
+        toolsets=[toolset],
+        system_prompt=SYSTEM_PROMPT,
+    )
+
+    history: list[ModelMessage] = []
+
+    async with agent:
+        while True:
+            try:
+                user_input = await asyncio.to_thread(input, "\nYou > ")
+                user_input = user_input.strip()
+
+                if not user_input:
+                    continue
+
+                if user_input.lower() in ("exit", "quit", "q"):
+                    print("\nClosing session. Goodbye!")
+                    break
+
+                # Run turn with message history preserved
+                result = await agent.run(user_input, message_history=history)
+                history = result.all_messages()
+
+                print(f"\nAssistant > {result.output}")
+
+            except KeyboardInterrupt:
+                print("\n\nSession interrupted. Goodbye!")
+                break
+            except Exception as error:
+                print(f"\n⚠️  Error during turn: {error}")
+                print("The conversation will continue. Please try your request again.")
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        print("\nSession ended.")
