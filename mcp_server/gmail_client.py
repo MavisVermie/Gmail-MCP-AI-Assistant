@@ -1,5 +1,8 @@
 import base64
+from email.mime.text import MIMEText
+from email.utils import parseaddr
 from pathlib import Path
+import re
 
 from bs4 import BeautifulSoup
 from google.auth.transport.requests import Request
@@ -9,9 +12,8 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 
-# Read-only access for now.
-# Later, we will expand this so the app can send and reply.
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Full read, search, send, reply, and modify permissions.
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CREDENTIALS_FILE = BASE_DIR / "credentials.json"
@@ -316,3 +318,135 @@ def read_email(message_id: str) -> dict | None:
         "body": body,
         "attachments": attachments,
     }
+
+
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+
+
+def _validate_email(email_str: str) -> bool:
+    """Validate single email address string."""
+
+    if not email_str or not isinstance(email_str, str):
+        return False
+
+    _, addr = parseaddr(email_str)
+    target = addr.strip() if addr else email_str.strip()
+    return bool(EMAIL_REGEX.match(target))
+
+
+def _normalize_recipients(recipients: str | list[str] | None) -> tuple[bool, str, list[str]]:
+    """Normalize recipients to list of valid email strings.
+
+    Returns (is_valid, formatted_header_str, list_of_invalid_addresses).
+    """
+
+    if not recipients:
+        return True, "", []
+
+    if isinstance(recipients, str):
+        addr_list = [a.strip() for a in recipients.split(",") if a.strip()]
+    elif isinstance(recipients, list):
+        addr_list = [str(a).strip() for a in recipients if str(a).strip()]
+    else:
+        return False, "", [str(recipients)]
+
+    invalid_addrs = [addr for addr in addr_list if not _validate_email(addr)]
+    formatted_str = ", ".join(addr_list)
+
+    return len(invalid_addrs) == 0, formatted_str, invalid_addrs
+
+
+def send_email(
+    to: str | list[str],
+    subject: str,
+    body: str,
+    cc: str | list[str] | None = None,
+) -> dict:
+    """Construct a MIME text email and send it via Gmail API."""
+
+    if not subject or not subject.strip():
+        return {
+            "success": False,
+            "id": None,
+            "thread_id": None,
+            "message": "Email subject cannot be empty.",
+        }
+
+    if not body or not body.strip():
+        return {
+            "success": False,
+            "id": None,
+            "thread_id": None,
+            "message": "Email body cannot be empty.",
+        }
+
+    to_valid, to_header, invalid_to = _normalize_recipients(to)
+    if not to_valid or not to_header:
+        err_msg = f"Invalid recipient email address(es): {', '.join(invalid_to)}" if invalid_to else "Recipient 'to' field is required."
+        return {
+            "success": False,
+            "id": None,
+            "thread_id": None,
+            "message": err_msg,
+        }
+
+    cc_valid, cc_header, invalid_cc = _normalize_recipients(cc)
+    if not cc_valid:
+        return {
+            "success": False,
+            "id": None,
+            "thread_id": None,
+            "message": f"Invalid CC email address(es): {', '.join(invalid_cc)}",
+        }
+
+    try:
+        mime_msg = MIMEText(body, "plain", "utf-8")
+        mime_msg["To"] = to_header
+        mime_msg["Subject"] = subject
+        if cc_header:
+            mime_msg["Cc"] = cc_header
+
+        raw_bytes = base64.urlsafe_b64encode(mime_msg.as_bytes()).decode("utf-8")
+    except Exception as error:
+        return {
+            "success": False,
+            "id": None,
+            "thread_id": None,
+            "message": f"Failed to construct MIME message: {error}",
+        }
+
+    try:
+        credentials = authenticate_gmail()
+        service = build("gmail", "v1", credentials=credentials)
+
+        sent_msg = (
+            service.users()
+            .messages()
+            .send(
+                userId="me",
+                body={"raw": raw_bytes},
+            )
+            .execute()
+        )
+
+        return {
+            "success": True,
+            "id": sent_msg.get("id", ""),
+            "thread_id": sent_msg.get("threadId", ""),
+            "message": "Email sent successfully.",
+        }
+
+    except HttpError as error:
+        return {
+            "success": False,
+            "id": None,
+            "thread_id": None,
+            "message": f"Gmail API error sending email: {error}",
+        }
+    except Exception as error:
+        return {
+            "success": False,
+            "id": None,
+            "thread_id": None,
+            "message": f"Unexpected error sending email: {error}",
+        }
