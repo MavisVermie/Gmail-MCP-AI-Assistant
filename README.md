@@ -71,7 +71,11 @@ pip install -r requirements.txt
 ```
 
 ### Configuration
-1. Create a `.env` file in the project root:
+1. Copy `.env.example` to `.env` in the project root and add your OpenAI API key:
+   ```bash
+   cp .env.example .env
+   ```
+   Or create `.env` manually:
    ```env
    OPENAI_API_KEY=your-openai-api-key-here
    ```
@@ -92,13 +96,30 @@ On first run, your browser will open asking you to authorize access to your Gmai
 
 ## Running Tests
 
-Run the test suite with pytest:
+The project includes an offline unit and mock test suite in the `tests/` directory. The tests use `unittest.mock` to mock Gmail API calls and terminal inputs, running completely offline without hitting real Gmail accounts.
+
+Run the test suite with:
 
 ```bash
+# With activated virtual environment:
 pytest -v
+
+# Or directly via python module:
+python -m pytest -v
+
+# On Windows (without virtualenv activation):
+.venv\Scripts\pytest -v
 ```
 
-The unit tests cover header parsing, email validation, and recipient normalization functions in `tests/test_gmail_client.py`.
+### What the Tests Cover
+- **`tests/test_gmail_client.py`**:
+  - `list_emails()` returns clean dictionaries with expected fields (`id`, `from`, `subject`, `date`, `snippet`).
+  - `read_email()` converts HTML emails into clean plain text and strips `<script>` tags.
+  - `send_email()` rejects invalid recipient addresses without making API calls.
+  - `HttpError` exceptions return structured error dictionaries instead of crashing.
+  - `reply_to_email()` preserves the original `threadId` in the request payload.
+- **`tests/test_approval_flow.py`**:
+  - Verifies that application security confirmation blocks `send_email` and `reply_to_email` when user rejects (`n`), and allows tool execution only when explicitly approved (`y`).
 
 ---
 
