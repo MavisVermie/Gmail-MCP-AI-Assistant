@@ -1,136 +1,152 @@
-# MenaDevs Gmail Assistant (AI Agent + FastMCP)
+# MenaDevs Gmail Assistant
 
-An intelligent, conversational Gmail assistant built with **Pydantic AI** and **FastMCP**. The application connects over the **Model Context Protocol (MCP)** via `stdio` transport, exposing Gmail operations to an autonomous LLM agent with application-enforced security approvals and structured JSON Lines audit logging.
+A CLI email assistant built with Python, Pydantic AI, and FastMCP. It lets you list, read, search, send, and reply to Gmail messages through a terminal chat interface using the Model Context Protocol (MCP).
 
 ---
 
-## 🏗️ Architecture Overview
+## Features
 
-The system uses a decoupled architecture where the AI Agent never interacts directly with Gmail APIs or internal client code. Instead, all email operations flow through an MCP server boundary:
+- Read, search, send, and reply to Gmail messages
+- Multi-turn conversation memory
+- Human confirmation before sending or replying to emails
+- Structured JSON Lines audit logging
+- OAuth 2.0 authentication (`https://www.googleapis.com/auth/gmail.modify`)
+- MCP communication over stdio
+
+---
+
+## Architecture
 
 ```text
-+-----------------------------------------------------------------------------------+
-|                                  USER TERMINAL                                    |
-|                               (Interactive CLI)                                   |
-+-----------------------------------------------------------------------------------+
-                                         │
-                                         ▼
-+-----------------------------------------------------------------------------------+
-|                                 PYDANTIC AI AGENT                                 |
-|               (LLM Orchestrator: OpenAI gpt-4o + Message History)                |
-+-----------------------------------------------------------------------------------+
-                                         │
-                         Application Security Interceptor
-                   (process_tool_approval for send/reply y/N)
-                                         │
-                                         ▼  MCP stdio Protocol
-+-----------------------------------------------------------------------------------+
-|                                 FASTMCP SERVER                                    |
-|                             (mcp_server/server.py)                                |
-|                                                                                   |
-|  [list_emails]   [read_email]   [search_emails]   [send_email]   [reply_to_email]  |
-+-----------------------------------------------------------------------------------+
-                                         │
-                                         ▼ Python Calls
-+-----------------------------------------------------------------------------------+
-|                                 GMAIL CLIENT API                                  |
-|                          (mcp_server/gmail_client.py)                             |
-+-----------------------------------------------------------------------------------+
-                                         │
-                                         ▼ OAuth 2.0 / HTTPS
-+-----------------------------------------------------------------------------------+
-|                                GOOGLE GMAIL API                                   |
-|                      (https://gmail.googleapis.com/...)                          |
-+-----------------------------------------------------------------------------------+
++---------------+     Stdio     +---------------+     Python     +--------------+     HTTPS     +-----------+
+|  User (CLI)   | ------------> | Pydantic AI   | -------------> | FastMCP      | ------------> | Gmail API |
+| Chat Loop     | <------------ | Agent (gpt-4o)| <------------- | Server       | <------------ | (Google)  |
++---------------+               +---------------+                +--------------+               +-----------+
+```
+
+The terminal chat loop sends user prompts to a Pydantic AI agent configured with `openai:gpt-4o`. The agent invokes email tools exposed by a FastMCP server running as a subprocess over stdio. The FastMCP server calls the Gmail client, which authenticates via Google OAuth 2.0 and communicates with the Gmail API.
+
+---
+
+## Project Structure
+
+```text
+.
+├── main.py
+├── mcp_server/
+│   ├── gmail_client.py
+│   └── server.py
+├── tests/
+│   └── test_gmail_client.py
+├── requirements.txt
+├── README.md
+└── decisions.md
 ```
 
 ---
 
-## ⚡ 15-Minute Setup & Reviewer Guide
+## Setup
 
-Follow these steps to set up and run the application in under 15 minutes.
+### Requirements
+- **Python 3.11+**
+- Google Cloud project with the Gmail API enabled
+- OpenAI API key
 
-### 1. Prerequisites
-- **Python 3.10** or higher installed.
-- A **Google Cloud Platform (GCP)** project with the **Gmail API** enabled and an **OAuth 2.0 Client ID** configured as a *Desktop Application*.
-
-### 2. Installation
+### Installation
 Clone the repository and set up a Python virtual environment:
 
 ```bash
 git clone https://github.com/MavisVermie/MenaDevs-Email-Assistant.git
 cd MenaDevs-Email-Assistant
 
-# Create and activate virtual environment
 python -m venv .venv
 
-# On Windows (PowerShell):
+# Windows (PowerShell)
 .venv\Scripts\Activate.ps1
 
-# On Linux / macOS:
+# Linux / macOS
 source .venv/bin/activate
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Environment & Credential Configuration
-1. **OpenAI API Key**: Create a `.env` file in the project root containing your OpenAI API key:
+### Configuration
+1. Create a `.env` file in the project root:
    ```env
-   OPENAI_API_KEY=sk-proj-your-openai-api-key-here
+   OPENAI_API_KEY=your-openai-api-key-here
    ```
-2. **Google OAuth Credentials**: Download your OAuth client secret JSON file from Google Cloud Console, rename it to `credentials.json`, and place it in the **project root directory**:
-   ```text
-   MenaDevs-Email-Assistant/
-   ├── credentials.json  <-- Place here
-   ├── .env
-   ├── main.py
-   └── ...
-   ```
+2. Download your OAuth client secret from Google Cloud Console, rename it `credentials.json`, and place it in the project root directory.
 
-### 4. Running the Agent
-Run the main conversational agent:
+> **Note on OAuth Scopes:** This project uses the `https://www.googleapis.com/auth/gmail.modify` scope. If you ever update or change OAuth scopes in the code, delete `token.json` and run the application again to re-authenticate.
+
+### Run the Project
+Start the interactive CLI:
 
 ```bash
 python main.py
 ```
 
-*Note: On your first run, a browser window will automatically open asking you to authorize the Gmail application with `gmail.modify` permissions. After approving, a local `token.json` file is saved for future session reuse.*
+On first run, your browser will open asking you to authorize access to your Gmail account. Once authorized, a `token.json` file is saved locally for future runs.
 
 ---
 
-## 🛠️ Framework & Technology Selection
+## Running Tests
 
-| Component | Technology | Rationale & Selection Criteria |
-| :--- | :--- | :--- |
-| **Agent Framework** | **Pydantic AI** | Selected for type-safe tool parameters, native MCP toolset support (`MCPToolset`), robust multi-turn message history tracking (`ModelMessage`), and clean exception management. |
-| **MCP Server** | **FastMCP** | Lightweight Python framework that auto-generates MCP tool schemas from type annotations and docstrings, supporting stdio execution without boilerplate. |
-| **LLM Model** | **OpenAI `gpt-4o`** | High function-calling reliability, fast response times, and strong adherence to system prompts and structured tool calling workflows. |
-| **Email API** | **Google Gmail API** | Official Google client library (`google-api-python-client`) with OAuth 2.0 authentication and standard MIME parsing (`email.mime`). |
+Run the test suite with pytest:
 
----
+```bash
+pytest -v
+```
 
-## 🔒 Key Design & Security Features
-
-- **Decoupled Architecture**: The agent connects to the MCP server strictly over `StdioTransport` subprocess communication without importing internal functions directly.
-- **Application-Enforced Security Interceptions**: Calls to `send_email` and `reply_to_email` are intercepted before execution. The CLI presents a full preview box showing recipient, original subject, message ID, and body text, requiring explicit `y/N` confirmation before sending.
-- **MIME Parsing & HTML Clean-up**: Automatically parses multipart emails, extracts attachment metadata, and converts HTML-only emails to clean plain text via `BeautifulSoup`.
-- **Structured Audit Logging**: Every tool execution is logged in single-line **JSON Lines** format to both console and `agent.log` with execution timing, success/failure flags, and sanitized parameters (masking API keys and truncating email bodies).
+The unit tests cover header parsing, email validation, and recipient normalization functions in `tests/test_gmail_client.py`.
 
 ---
 
-## ⚠️ Known Limitations
+## Example Conversation
 
-1. **Stdio Subprocess Transport**: Currently relies on local `stdio` subprocess transport rather than an external HTTP/SSE microservice URL.
-2. **Single Account Context**: Authenticates a single Gmail inbox per `token.json` session.
-3. **Plain Text Composition**: Email creation and replies currently generate UTF-8 plain-text bodies; rich HTML email rendering/editing is not yet supported.
-4. **Metadata-Only Attachments**: Attachment metadata is extracted and displayed, but downloading or uploading attachment binary files to disk is not exposed as an MCP tool.
+```text
+You > Show my latest 2 emails.
+
+Assistant > Here are your 2 most recent emails:
+1. From: Shasta Smith <shasta@example.com> | Subject: Return | ID: 19f9a22d5769ff92
+2. From: Pizza Hut KSA <pizzahut@example.com> | Subject: Special Offer | ID: 19f99e6031c8f290
+
+You > Read the first one.
+
+Assistant > Subject: Return
+From: Shasta Smith <shasta@example.com>
+Date: Sat, 25 Jul 2026 16:05:00 +0000
+Body: Hello! I am needing to return the hardware we purchased...
+
+You > Reply telling them hardware sales are final per our policy.
+
+🔒 [SECURITY APPROVAL REQUIRED: REPLY TO EMAIL]
+  • Message ID        : 19f9a22d5769ff92
+  • Recipient (To)    : Shasta Smith <shasta@example.com>
+  • Original Subject  : Return
+  • Reply Body        :
+Hello Shasta, per our return policy, hardware physical sales are final.
+=================================================================
+Do you approve sending this reply? (y/N): y
+
+✅ Reply approved by user. Executing via MCP...
+
+Assistant > I have sent the reply to Shasta Smith.
+```
 
 ---
 
-## 🔮 Future Enhancements (With More Time)
+## Known Limitations
 
-- **Drafts & Rich Text Support**: Add a `create_draft` MCP tool and support Markdown/HTML email formatting.
-- **Attachment Download & Inspection**: Implement an `inspect_attachment(attachment_id)` tool to download and analyze PDF/CSV documents.
-- **Real-Time Webhooks / Push Notifications**: Integrate Gmail `watch()` API with Google Cloud Pub/Sub for real-time background email alerts.
-- **Remote MCP HTTP/SSE Deployment**: Deploy the FastMCP server as a standalone Dockerized container supporting SSE transport for multi-user web clients.
+- Supports one Gmail account per session
+- Attachments are listed by metadata but file contents are not downloaded
+- CLI only (no web interface)
+
+---
+
+## Future Improvements
+
+- Draft support
+- Attachment downloads
+- Remote HTTP/SSE transport
+- Rich HTML emails
