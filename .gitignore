@@ -4,5 +4,4 @@ token.json
 .env
 __pycache__/
 *.pyc
-decisions.md
 agent.log
