@@ -3,7 +3,7 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from main import process_tool_approval
+from approval import process_tool_approval
 
 
 def test_send_email_prevented_when_user_rejects():

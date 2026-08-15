@@ -6,10 +6,17 @@ Or:        python mcp_server/server.py
 
 from fastmcp import FastMCP
 
-from mcp_server.gmail_client import (
+from mcp_server.labels import (
+    get_thread as _get_thread,
+    list_labels as _list_labels,
+    modify_labels as _modify_labels,
+)
+from mcp_server.reader import (
     list_emails as _list_emails,
     read_email as _read_email,
     search_emails as _search_emails,
+)
+from mcp_server.sender import (
     send_email as _send_email,
     reply_to_email as _reply_to_email,
 )
@@ -133,6 +140,65 @@ def reply_to_email(message_id: str, body: str) -> dict:
         success (bool), id, thread_id, and message.
     """
     return _reply_to_email(message_id=message_id, body=body)
+
+
+@mcp.tool
+def list_labels() -> list[dict]:
+    """List all Gmail labels for the authenticated account.
+
+    Returns both system labels (INBOX, SENT, TRASH, etc.) and
+    user-created labels.
+
+    Returns:
+        A list of dictionaries, each containing: id, name, type.
+    """
+    return _list_labels()
+
+
+@mcp.tool
+def modify_labels(
+    message_id: str,
+    add_labels: list[str] | None = None,
+    remove_labels: list[str] | None = None,
+) -> dict:
+    """Add or remove labels from a Gmail message.
+
+    Use this to archive (remove INBOX), star (add STARRED),
+    mark as read (remove UNREAD), move to trash (add TRASH), etc.
+
+    Common label IDs: INBOX, UNREAD, STARRED, SPAM, TRASH, IMPORTANT.
+
+    Args:
+        message_id: The Gmail message ID to modify.
+        add_labels: Label IDs to add to the message.
+        remove_labels: Label IDs to remove from the message.
+
+    Returns:
+        A dictionary containing: success (bool) and message.
+    """
+    return _modify_labels(
+        message_id=message_id,
+        add_labels=add_labels,
+        remove_labels=remove_labels,
+    )
+
+
+@mcp.tool
+def get_thread(thread_id: str) -> dict | None:
+    """Fetch an entire Gmail conversation thread.
+
+    Returns all messages in the thread with full details (body, headers,
+    attachments), ordered chronologically. Useful for understanding
+    the full context of a conversation.
+
+    Args:
+        thread_id: The Gmail thread ID to fetch.
+
+    Returns:
+        A dictionary containing: thread_id, message_count, and messages
+        (list of full message dicts). Returns None if the thread is not found.
+    """
+    return _get_thread(thread_id)
 
 
 if __name__ == "__main__":

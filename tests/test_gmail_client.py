@@ -5,12 +5,10 @@ from unittest.mock import MagicMock, patch
 from googleapiclient.errors import HttpError
 import pytest
 
-from mcp_server.gmail_client import (
+from mcp_server.reader import get_header, list_emails, read_email
+from mcp_server.sender import (
     _normalize_recipients,
     _validate_email,
-    get_header,
-    list_emails,
-    read_email,
     reply_to_email,
     send_email,
 )
@@ -45,12 +43,16 @@ def test_normalize_recipients():
     assert invalid_bad == ["bad-email"]
 
 
-@patch("mcp_server.gmail_client.build")
-@patch("mcp_server.gmail_client.authenticate_gmail")
+@patch("mcp_server.auth.build")
+@patch("mcp_server.auth.authenticate_gmail")
 def test_list_emails_returns_clean_dicts(mock_auth, mock_build):
     """Test that list_emails() returns clean dictionaries with expected fields."""
     mock_service = MagicMock()
     mock_build.return_value = mock_service
+
+    # Reset cached service so our mock is used
+    import mcp_server.auth
+    mcp_server.auth._cached_service = None
 
     # Mock list() API call
     mock_list_exec = MagicMock()
@@ -83,12 +85,16 @@ def test_list_emails_returns_clean_dicts(mock_auth, mock_build):
     assert email["snippet"] == "Test snippet text"
 
 
-@patch("mcp_server.gmail_client.build")
-@patch("mcp_server.gmail_client.authenticate_gmail")
+@patch("mcp_server.auth.build")
+@patch("mcp_server.auth.authenticate_gmail")
 def test_read_email_converts_html_to_plain_text(mock_auth, mock_build):
     """Test that read_email() converts HTML body into readable plain text."""
     mock_service = MagicMock()
     mock_build.return_value = mock_service
+
+    # Reset cached service so our mock is used
+    import mcp_server.auth
+    mcp_server.auth._cached_service = None
 
     # HTML encoded in base64: "<p>Hello <b>World</b></p><script>alert('bad')</script>"
     html_b64 = "PHA+SGVsbG8gPGI+V29ybGQ8L2I+PC9wPjxzY3JpcHQ+YWxlcnQoJ2JhZCcpPC9zY3JpcHQ+"
@@ -126,12 +132,16 @@ def test_send_email_rejects_invalid_recipient():
     assert "Invalid recipient" in res["message"]
 
 
-@patch("mcp_server.gmail_client.build")
-@patch("mcp_server.gmail_client.authenticate_gmail")
+@patch("mcp_server.auth.build")
+@patch("mcp_server.auth.authenticate_gmail")
 def test_gmail_api_error_returns_structured_failure(mock_auth, mock_build):
     """Test that HttpError returns a structured response instead of crashing."""
     mock_service = MagicMock()
     mock_build.return_value = mock_service
+
+    # Reset cached service so our mock is used
+    import mcp_server.auth
+    mcp_server.auth._cached_service = None
 
     resp = MagicMock(status=404)
     http_err = HttpError(resp, b"Message not found")
@@ -150,12 +160,16 @@ def test_gmail_api_error_returns_structured_failure(mock_auth, mock_build):
     assert "Gmail API error" in send_res["message"]
 
 
-@patch("mcp_server.gmail_client.build")
-@patch("mcp_server.gmail_client.authenticate_gmail")
+@patch("mcp_server.auth.build")
+@patch("mcp_server.auth.authenticate_gmail")
 def test_reply_to_email_preserves_thread_id(mock_auth, mock_build):
     """Test that reply_to_email() preserves the original threadId."""
     mock_service = MagicMock()
     mock_build.return_value = mock_service
+
+    # Reset cached service so our mock is used
+    import mcp_server.auth
+    mcp_server.auth._cached_service = None
 
     # Original message fetch mock
     mock_get_exec = MagicMock()
