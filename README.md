@@ -1,4 +1,4 @@
-# MenaDevs Gmail Assistant
+# Gmail MCP AI Assistant
 
 A CLI email assistant built with Python, Pydantic AI, and FastMCP. It lets you list, read, search, send, and reply to Gmail messages through a terminal chat interface using the Model Context Protocol (MCP).
 
@@ -33,11 +33,20 @@ The terminal chat loop sends user prompts to a Pydantic AI agent configured with
 ```text
 .
 ├── main.py
+├── approval.py
+├── tool_logger.py
 ├── mcp_server/
+│   ├── auth.py
 │   ├── gmail_client.py
+│   ├── labels.py
+│   ├── reader.py
+│   ├── sender.py
 │   └── server.py
 ├── tests/
-│   └── test_gmail_client.py
+│   ├── test_approval_flow.py
+│   ├── test_gmail_client.py
+│   ├── test_mime_parser.py
+│   └── test_search_emails.py
 ├── requirements.txt
 ├── README.md
 └── decisions.md
@@ -56,8 +65,8 @@ The terminal chat loop sends user prompts to a Pydantic AI agent configured with
 Clone the repository and set up a Python virtual environment:
 
 ```bash
-git clone https://github.com/MavisVermie/MenaDevs-Email-Assistant.git
-cd MenaDevs-Email-Assistant
+git clone https://github.com/MavisVermie/Gmail-MCP-AI-Assistant.git
+cd Gmail-MCP-AI-Assistant
 
 python -m venv .venv
 
